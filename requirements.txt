@@ -1,0 +1,16 @@
+# Web Framework
+fastapi
+uvicorn[standard]
+
+# AI & Graph Orchestration
+langgraph
+google-genai          # The 2026 Unified SDK we used in gemini_service.py
+langchain-google-genai # Only if you use LangChain primitives inside LangGraph
+
+# API & Data
+httpx                 # Essential for our async Airport & Flight services
+pydantic
+python-dotenv
+
+# Utilities
+huggingface_hub       # Optional: only if you still want the HF fallback

@@ -1,0 +1,10 @@
+node_modules
+/.env
+.env
+# Ignore Python bytecode files
+*.pyc
+*.pyo
+# Ignore all Python cache directories
+__pycache__/
+
+flightMyEnv
