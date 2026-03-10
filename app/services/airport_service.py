@@ -142,13 +142,14 @@ class AirportService:
         return lat, lon
 
     async def get_nearby_airports(
-        self, lat: float, lon: float, radius: int = 500
+        self, lat: float, lon: float, radius: int = 350
     ) -> List[Dict[str, str]]:
         """
         Finds airports within `radius` km of the given coordinates.
         Returns up to 5 results as [{"iata": "...", "name": "..."}, ...].
-        For non-airport cities (Layer 2 fallback), this is how the nearest
-        airport is resolved — e.g. Dumka coords → IXR (Ranchi, ~100km).
+        Default 200 km — wide regional net; catches Pune→Mumbai (148 km),
+        Delhi→Agra etc. For non-airport cities (Layer 2 fallback),
+        this is how the nearest airport is resolved — e.g. Dumka → IXR (Ranchi ~100km).
         """
         try:
             response = await asyncio.to_thread(

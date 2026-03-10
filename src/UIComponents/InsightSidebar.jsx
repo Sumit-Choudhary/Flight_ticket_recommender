@@ -128,15 +128,13 @@ const InsightSidebar = ({ insight }) => {
       {/* ── Divider ── */}
       <div className="glow-rule" style={{ marginBottom:'20px' }} />
 
-      {/* ── Content — scrollable, fills remaining height ── */}
+      {/* ── Content ── */}
       <div style={{
         opacity, transform:`translateY(${translateY}px)`,
         transition:'opacity .4s ease, transform .4s ease',
-        flex:1,                 /* grow to fill space between header and footer */
-        overflowY:'auto',       /* scroll just this region */
-        overflowX:'hidden',
-        paddingRight:'4px',     /* breathing room for scrollbar */
-        minHeight:0,            /* flex child needs this to allow shrinking */
+        flex:1,
+        minHeight:0,
+        paddingRight:'4px',
       }}>
         {isLoading ? (
           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>

@@ -6,6 +6,7 @@ import InsightSidebar from './InsightSidebar';
 import ErrorPage from './ErrorPage';
 import LoadingSkeleton from './LoadingSkeleton';
 import FlightChatbot from './FlightChatBot';
+import CostCalculator from './CostCalculator';
 
 /* ─── Global styles injected once into <head> ────────────────────────────── */
 const GLOBAL_STYLES = `
@@ -283,6 +284,7 @@ const NavigatorUI = () => {
   const [flights, setFlights] = useState([]);
   const [insight, setInsight] = useState(null);
   const [sortOrder, setSortOrder]     = useState('asc');
+  const [selectedFlight, setSelectedFlight] = useState(null);
 
   // Primary IATA codes locked at search time — passed to ResultsGrid so
   // nearby badges can say "Alt. Origin", "Alt. Destination", or "Alt. Origin + Dest"
@@ -391,6 +393,7 @@ const NavigatorUI = () => {
     setInsight(null);
     setPrimaryOrigin('');
     setPrimaryDest('');
+    setSelectedFlight(null);
     setConfirmedOrigin(origin.trim());
     setConfirmedDest(destination.trim());
 
@@ -479,7 +482,7 @@ const NavigatorUI = () => {
         {/* ── Top bar ──────────────────────────────────────────────────── */}
         <header style={{
           background:'var(--panel)', borderBottom:'1px solid var(--border)',
-          padding:'10px 32px', display:'flex', justifyContent:'space-between', alignItems:'center',
+          padding:'7px 32px', display:'flex', justifyContent:'space-between', alignItems:'center',
         }}>
           <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
             <span style={{ fontSize:'16px' }}>✈</span>
@@ -514,24 +517,25 @@ const NavigatorUI = () => {
         {/* ── Hero / Search panel ───────────────────────────────────────── */}
         <div style={{
           background:'linear-gradient(180deg, var(--panel) 0%, var(--ink) 100%)',
-          borderBottom:'1px solid var(--border)', padding:'44px 32px 36px',
+          borderBottom:'1px solid var(--border)', padding:'18px 32px 20px',
         }}>
 
-          {/* Headline */}
-          <div className="rise" style={{ marginBottom:'36px' }}>
+          {/* Compact headline row */}
+          <div className="rise" style={{ marginBottom:'16px', display:'flex', alignItems:'baseline', gap:'16px', flexWrap:'wrap' }}>
             <h1 style={{
               fontFamily:"'Playfair Display',serif",
-              fontSize:'clamp(26px,4vw,50px)', fontWeight:900,
+              fontSize:'clamp(18px,2.2vw,28px)', fontWeight:900,
               lineHeight:1.1, letterSpacing:'-.02em', color:'var(--text-primary)',
+              whiteSpace:'nowrap',
             }}>
-              Find the Cheapest<br/>
-              <span style={{ color:'var(--electric)' }}>Flight Home.</span>
+              Find the Cheapest&nbsp;<span style={{ color:'var(--electric)' }}>Flights.</span>
             </h1>
             <p style={{
-              fontFamily:"'Crimson Pro',serif", fontSize:'17px', fontStyle:'italic',
-              color:'var(--text-secondary)', marginTop:'10px',
+              fontFamily:"'Crimson Pro',serif", fontSize:'14px', fontStyle:'italic',
+              color:'var(--text-secondary)', whiteSpace:'nowrap',
             }}>
-              We scan your city and every nearby airport — so you never overpay.
+              We also scan your origin and destination city and every nearby airports 
+              — so you never overpay.
             </p>
           </div>
 
@@ -644,8 +648,8 @@ const NavigatorUI = () => {
 
         {/* ── Body ─────────────────────────────────────────────────────── */}
         <div style={{
-          display:'grid', gridTemplateColumns:'1fr 340px', gap:'32px',
-          padding:'36px 32px', maxWidth:'1400px', margin:'0 auto', alignItems:'start',
+          display:'grid', gridTemplateColumns:'1fr 340px', gap:'24px',
+          padding:'20px 32px', maxWidth:'1400px', margin:'0 auto', alignItems:'start',
         }}>
 
           <main style={{ minWidth:0 }}>
@@ -668,6 +672,14 @@ const NavigatorUI = () => {
                   {topPicks.map((f,i) => <TopPickCard key={`tp-${i}`} flight={f} rank={i} />)}
                 </div>
               </section>
+            )}
+
+            {/* Cost Calculator — shown when a flight is selected */}
+            {selectedFlight && (
+              <CostCalculator
+                flight={selectedFlight}
+                onClose={() => setSelectedFlight(null)}
+              />
             )}
 
             {/* All routes */}
@@ -710,7 +722,7 @@ const NavigatorUI = () => {
                   <option value="dur">DURATION ↑ SHORTEST FIRST</option>
                 </select>
               </div>
-              {isLoading ? <LoadingSkeleton /> : <ResultsGrid flights={sortedFlights} primaryOrigin={primaryOrigin} primaryDest={primaryDest} flexDate={flexDate} />}
+              {isLoading ? <LoadingSkeleton /> : <ResultsGrid flights={sortedFlights} primaryOrigin={primaryOrigin} primaryDest={primaryDest} flexDate={flexDate} onSelect={setSelectedFlight} selectedFlight={selectedFlight} />}
             </div>
           </main>
 
@@ -733,7 +745,7 @@ const NavigatorUI = () => {
               />
             </div>
             {/* Insight — takes remaining space, scrolls internally */}
-            <div style={{ flex:1, minHeight:0, overflow:'hidden' }}>
+            <div style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden' }}>
               <InsightSidebar insight={insight} />
             </div>
           </aside>

@@ -23,7 +23,7 @@ const getNearbyLabel = (flight, primaryOrigin, primaryDest) => {
   return "Alternative Airport";
 };
 
-const ResultsGrid = ({ flights, primaryOrigin, primaryDest, flexDate = false }) => {
+const ResultsGrid = ({ flights, primaryOrigin, primaryDest, flexDate = false, onSelect, selectedFlight }) => {
 
   if (!flights || flights.length === 0) {
     return (
@@ -56,6 +56,7 @@ const ResultsGrid = ({ flights, primaryOrigin, primaryDest, flexDate = false }) 
     }}>
       {flights.map((flight, idx) => {
         const key         = `${flight.origin}-${flight.destination}-${flight.airline}-${flight.departure_time}-${idx}`;
+        const isSelected  = selectedFlight && selectedFlight.airline === flight.airline && selectedFlight.origin === flight.origin && selectedFlight.destination === flight.destination && selectedFlight.departure_time === flight.departure_time && selectedFlight.departure_date === flight.departure_date;
         const originLabel = flight.origin_name      || flight.origin      || '—';
         const destLabel   = flight.destination_name || flight.destination || '—';
         const nearbyLabel = getNearbyLabel(flight, primaryOrigin, primaryDest);
@@ -65,18 +66,23 @@ const ResultsGrid = ({ flights, primaryOrigin, primaryDest, flexDate = false }) 
         return (
           <div key={key} style={{
             background:'#0c1929',
-            border:'1px solid #1b3149',
+            border:`1px solid ${isSelected ? '#f59e0b' : '#1b3149'}`,
             borderRadius:'14px', padding:'20px',
             transition:'border-color .2s, box-shadow .2s',
             display:'flex', flexDirection:'column', gap:'0',
+            boxShadow: isSelected ? '0 4px 24px rgba(245,158,11,0.12)' : 'none',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.borderColor = '#38bdf8';
-            e.currentTarget.style.boxShadow   = '0 4px 24px rgba(56,189,248,0.08)';
+            if (!isSelected) {
+              e.currentTarget.style.borderColor = '#38bdf8';
+              e.currentTarget.style.boxShadow   = '0 4px 24px rgba(56,189,248,0.08)';
+            }
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = '#1b3149';
-            e.currentTarget.style.boxShadow   = 'none';
+            if (!isSelected) {
+              e.currentTarget.style.borderColor = '#1b3149';
+              e.currentTarget.style.boxShadow   = 'none';
+            }
           }}
           >
 
@@ -232,6 +238,26 @@ const ResultsGrid = ({ flights, primaryOrigin, primaryDest, flexDate = false }) 
                 </span>
               )}
             </div>
+
+            {/* ── Select button ── */}
+            <button
+              onClick={() => onSelect && onSelect(isSelected ? null : flight)}
+              style={{
+                marginTop: '14px',
+                width: '100%', padding: '8px',
+                background: isSelected ? 'rgba(245,158,11,0.12)' : 'rgba(56,189,248,0.06)',
+                border: `1px solid ${isSelected ? 'rgba(245,158,11,0.4)' : 'rgba(56,189,248,0.2)'}`,
+                borderRadius: '8px',
+                color: isSelected ? '#f59e0b' : '#38bdf8',
+                fontFamily: "'IBM Plex Mono',monospace", fontSize: '10px',
+                fontWeight: 700, letterSpacing: '.12em', cursor: 'pointer',
+                transition: 'all .15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = isSelected ? 'rgba(245,158,11,0.2)' : 'rgba(56,189,248,0.12)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'rgba(245,158,11,0.12)' : 'rgba(56,189,248,0.06)'; }}
+            >
+              {isSelected ? '✕ DESELECT FLIGHT' : '🧮 SELECT · CALCULATE COST'}
+            </button>
 
           </div>
         );
