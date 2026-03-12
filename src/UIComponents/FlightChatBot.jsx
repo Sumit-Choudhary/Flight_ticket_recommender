@@ -157,7 +157,7 @@ const FlightChatbot = ({ flights = [], originCity = "", destName = "", isSearchi
         <>
           {/* Messages area */}
           <div style={{
-            height: '280px', overflowY: 'auto', overflowX: 'hidden',
+            height: '300px', overflowY: 'auto', overflowX: 'hidden',
             padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px',
           }}>
 

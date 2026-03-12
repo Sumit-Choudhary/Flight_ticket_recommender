@@ -1,13 +1,15 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
 import sys
+import json
 
 # Internal Imports
 from app.models.flight import SearchRequest, FlightRecommendation, FlightOption
-from app.graphs.travel_graph import travel_app
+from app.graphs.travel_graph import travel_app, scrape_and_stream, find_nearby_airports_node
 from app.services.gemini_service import GeminiService
 from typing import List
 
@@ -122,6 +124,88 @@ async def search_flights(request: SearchRequest):
         all_options=flights,
         ai_insight=final_state.get("final_recommendation") or "AI insight unavailable.",
         total_combinations_searched=len(flights)
+    )
+
+
+# ── Streaming search endpoint ────────────────────────────────────────────────
+
+@app.get("/search/stream")
+async def search_flights_stream(
+    source_city:      str,
+    destination_city: str,
+    travel_date:      str,
+):
+    """
+    Streaming version of /search.
+    Runs node_airports first (blocking, fast), then streams scrape results
+    as NDJSON lines via scrape_and_stream async generator.
+
+    Event types emitted on the stream:
+      {"type": "airports",  "origins": [...], "dests": [...]}
+      {"type": "status",    "origin": "PNQ", "origin_name": "...", "dest": "CCU",
+                            "dest_name": "...", "combo": 1, "total": 6}
+      {"type": "flights",   "origin": "PNQ", "dest": "CCU", "flights": [...]}
+      {"type": "error",     "origin": "PNQ", "dest": "CCU", "msg": "..."}
+      {"type": "done",      "total_flights": 38}
+    """
+
+    async def event_generator():
+        # ── 1. Resolve airports (fast, ~2s) ──────────────────────────────
+        initial_state = {
+            "origin_city":        source_city,
+            "dest_city":          destination_city,
+            "date":               travel_date,
+            "origin_lat":         None,
+            "origin_lon":         None,
+            "origin_airports":    [],
+            "dest_airports":      [],
+            "airport_names":      {},
+            "collected_flights":  [],
+            "final_recommendation": "",
+            "dest_full_name":     "",
+            "status":             "Resolving airports...",
+        }
+
+        try:
+            airport_state = await find_nearby_airports_node(initial_state)
+        except Exception as e:
+            yield json.dumps({"type": "error", "msg": f"Airport resolution failed: {e}"}) + "\n"
+            return
+
+        origin_airports = airport_state.get("origin_airports", [])
+        dest_airports   = airport_state.get("dest_airports",   [])
+        airport_names   = airport_state.get("airport_names",   {})
+        primary_origin  = origin_airports[0] if origin_airports else destination_city
+        primary_dest    = airport_state.get("dest_city", destination_city)
+
+        if not origin_airports:
+            yield json.dumps({"type": "error", "msg": "No origin airports found."}) + "\n"
+            return
+
+        # Emit airport list so UI knows what's coming
+        yield json.dumps({
+            "type":          "airports",
+            "origins":       origin_airports,
+            "dests":         dest_airports,
+            "airport_names": airport_names,
+            "dest_full_name": airport_state.get("dest_full_name", destination_city),
+        }) + "\n"
+
+        # ── 2. Stream scrape results pair by pair ─────────────────────────
+        async for chunk in scrape_and_stream(
+            origin_airports = origin_airports,
+            dest_airports   = dest_airports,
+            primary_origin  = primary_origin,
+            primary_dest    = primary_dest,
+            airport_names   = airport_names,
+            date            = travel_date,
+        ):
+            yield chunk + "\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no"},   # disables nginx buffering
     )
 
 

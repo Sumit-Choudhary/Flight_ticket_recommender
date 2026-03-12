@@ -142,7 +142,7 @@ class AirportService:
         return lat, lon
 
     async def get_nearby_airports(
-        self, lat: float, lon: float, radius: int = 350
+        self, lat: float, lon: float, radius: int = 200
     ) -> List[Dict[str, str]]:
         """
         Finds airports within `radius` km of the given coordinates.

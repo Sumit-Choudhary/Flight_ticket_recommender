@@ -1,16 +1,67 @@
-# Web Framework
-fastapi
-uvicorn[standard]
+# ─────────────────────────────────────────────────────────────────────────────
+# Navigator — Flight Intelligence App
+# Python >= 3.11 required
+#
+# Install:  pip install -r requirements.txt
+# Playwright browsers (one-time):  playwright install chromium
+# ─────────────────────────────────────────────────────────────────────────────
 
-# AI & Graph Orchestration
-langgraph
-google-genai          # The 2026 Unified SDK we used in gemini_service.py
-langchain-google-genai # Only if you use LangChain primitives inside LangGraph
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.6              # async web framework; StreamingResponse used by /search/stream
+uvicorn[standard]==0.32.1     # ASGI server; [standard] adds websocket + hot-reload deps
+starlette==0.41.3             # direct dep of FastAPI — CORS middleware, streaming
 
-# API & Data
-httpx                 # Essential for our async Airport & Flight services
-pydantic
-python-dotenv
+# ── Data validation ───────────────────────────────────────────────────────────
+pydantic==2.10.3              # BaseModel, Field — flight.py, main.py models
 
-# Utilities
-huggingface_hub       # Optional: only if you still want the HF fallback
+# ── LangGraph orchestration ───────────────────────────────────────────────────
+langgraph==0.2.69             # StateGraph, END — travel_graph.py
+langgraph-checkpoint==2.0.10  # required by langgraph for state snapshot/restore
+langchain-core==0.3.29        # transitive dep of langgraph internals
+
+# ── Browser automation (Google Flights scraper) ───────────────────────────────
+playwright==1.49.1            # async_playwright — scrape_google_flights_node,
+                              # scrape_and_stream generator in travel_graph.py
+playwright-stealth==1.0.6     # Stealth().apply_stealth_async — bot detection bypass
+
+# ── Google Gemini AI ──────────────────────────────────────────────────────────
+google-genai==1.14.0          # google.genai.Client + client.aio.models.generate_content
+                              # (async interface) — gemini_service.py
+google-auth==2.38.0           # transitive dep of google-genai for credential handling
+
+# ── Amadeus flight data API ───────────────────────────────────────────────────
+amadeus==9.0.0                # Client, Location, ResponseError — airport_service.py
+                              # used for city→IATA resolution and nearby airport lookup
+
+# ── Environment & config ──────────────────────────────────────────────────────
+python-dotenv==1.0.1          # load_dotenv() — reads GEMINI_API_KEY, AMADEUS_* from .env
+
+# ── Async / HTTP utilities ────────────────────────────────────────────────────
+anyio==4.7.0                  # async backend shared by FastAPI, uvicorn, httpx
+httpx==0.28.1                 # async HTTP client used internally by FastAPI + Gemini SDK
+requests==2.32.3              # sync HTTP — required by amadeus SDK internally
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SETUP NOTES
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Install Python deps:
+#       pip install -r requirements.txt
+#
+# 2. Download Chromium browser binary (one-time, ~170 MB):
+#       playwright install chromium
+#
+# 3. Required .env file in project root:
+#       GEMINI_API_KEY=your_gemini_key
+#       AMADEUS_CLIENT_ID=your_amadeus_client_id
+#       AMADEUS_CLIENT_SECRET=your_amadeus_client_secret
+#
+# 4. Start the backend:
+#       uvicorn main:app --reload --host 127.0.0.1 --port 8000
+#
+# 5. For Docker / Cloud Run — use the official Playwright base image to avoid
+#    missing Chromium system dependencies:
+#       mcr.microsoft.com/playwright/python:v1.49.0-jammy
+#    Then in your Dockerfile:
+#       RUN pip install -r requirements.txt
+#       RUN playwright install chromium
+# ─────────────────────────────────────────────────────────────────────────────

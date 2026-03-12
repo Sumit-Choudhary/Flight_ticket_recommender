@@ -26,6 +26,7 @@ from app.services.airport_service import AirportService
 from app.services.gemini_service import GeminiService
 from app.utils.flight_parser import parse_aria_text
 from app.utils.flight_deduplicator import deduplicate_flights
+import json
 
 # ── Service singletons ────────────────────────────────────────────────────────
 airport_svc = AirportService()
@@ -244,6 +245,132 @@ async def scrape_google_flights_node(state: TravelState):
     print(f"✅ Scraping complete. {len(raw_flights)} raw → {len(all_flights)} after dedup.")
 
     return {"collected_flights": all_flights}
+
+
+# ── STREAMING: scrape_and_stream — async generator for /search/stream ────────
+#
+# Yields NDJSON lines as each origin→dest pair completes.
+# Each line is one of:
+#   {"type": "status",  "origin": "PNQ", "dest": "CCU", "combo": 1, "total": 6}
+#   {"type": "flights", "origin": "PNQ", "dest": "CCU", "flights": [...]}
+#   {"type": "done",    "total_flights": 38}
+#
+# The existing scrape_google_flights_node is kept intact for non-streaming use.
+
+async def scrape_and_stream(
+    origin_airports: list[str],
+    dest_airports:   list[str],
+    primary_origin:  str,
+    primary_dest:    str,
+    airport_names:   dict,
+    date:            str,
+):
+    """
+    Drop-in streaming replacement for scrape_google_flights_node.
+    Yields JSON strings (without trailing newline — caller adds \n).
+    """
+    raw_flights: list[FlightOption] = []
+    total_combos = len(origin_airports) * len(dest_airports)
+    combo_num    = 0
+
+    origin_name_map = {iata: airport_names.get(iata, iata) for iata in origin_airports}
+    dest_name_map   = {iata: airport_names.get(iata, iata) for iata in dest_airports}
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(locale="en-IN", timezone_id="Asia/Kolkata")
+        page    = await context.new_page()
+
+        if not getattr(page, "_stealth_applied", False):
+            await Stealth().apply_stealth_async(page)
+            page._stealth_applied = True
+
+        for origin_iata in origin_airports:
+            for dest_iata in dest_airports:
+                combo_num += 1
+
+                # ── Emit status event so UI can show "Scanning PNQ → CCU" ──
+                yield json.dumps({
+                    "type":        "status",
+                    "origin":      origin_iata,
+                    "origin_name": origin_name_map.get(origin_iata, origin_iata),
+                    "dest":        dest_iata,
+                    "dest_name":   dest_name_map.get(dest_iata, dest_iata),
+                    "combo":       combo_num,
+                    "total":       total_combos,
+                })
+
+                url = (
+                    f"https://www.google.com/travel/flights"
+                    f"?q=Flights%20to%20{dest_iata}"
+                    f"%20from%20{origin_iata}"
+                    f"%20on%20{date}"
+                    f"%20oneway"
+                )
+
+                try:
+                    print(f"✈️  Streaming scrape: {origin_iata} → {dest_iata} ({combo_num}/{total_combos})")
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_selector(
+                        "xpath=//div[contains(@aria-label,'From')]", timeout=15000
+                    )
+                    elements = await page.query_selector_all(
+                        "xpath=//li//div[contains(@aria-label,'From')]"
+                    )
+
+                    pair_flights: list[FlightOption] = []
+                    first_element = True
+                    for element in elements:
+                        aria_text = await element.get_attribute("aria-label")
+                        if not aria_text:
+                            continue
+                        flight = parse_aria_text(
+                            aria_text      = aria_text,
+                            origin_iata    = origin_iata,
+                            dest_iata      = dest_iata,
+                            primary_origin = primary_origin,
+                            primary_dest   = primary_dest,
+                            departure_date = date,
+                            airport_names  = airport_names,
+                            debug          = first_element,
+                        )
+                        first_element = False
+                        if flight:
+                            pair_flights.append(flight)
+
+                    pair_flights.sort(key=lambda f: f.price)
+                    top5 = pair_flights[:5]
+                    raw_flights.extend(top5)
+
+                    # ── Emit flights event with this pair's results ────────
+                    if top5:
+                        yield json.dumps({
+                            "type":    "flights",
+                            "origin":  origin_iata,
+                            "dest":    dest_iata,
+                            "flights": [f.model_dump() for f in top5],
+                        })
+                        print(f"   ✅ Streamed {len(top5)} flights for {origin_iata}→{dest_iata}")
+
+                except Exception as e:
+                    print(f"⚠️  Skipping {origin_iata}→{dest_iata}: {e}")
+                    yield json.dumps({
+                        "type":  "error",
+                        "origin": origin_iata,
+                        "dest":   dest_iata,
+                        "msg":    str(e),
+                    })
+                    continue
+
+        await browser.close()
+
+    # Final dedup across all pairs, then emit done
+    all_flights = deduplicate_flights(raw_flights)
+    print(f"✅ Stream complete: {len(raw_flights)} raw → {len(all_flights)} deduped")
+    yield json.dumps({
+        "type":          "done",
+        "total_flights": len(all_flights),
+    })
 
 
 # ── NODE 3: Gemini AI insight ─────────────────────────────────────────────────

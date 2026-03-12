@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import axios from 'axios';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { mockResults } from './test_mock_Data';
 import ResultsGrid from './ResultsGrid';
 import InsightSidebar from './InsightSidebar';
@@ -66,6 +65,24 @@ const GLOBAL_STYLES = `
   .rise-2 { animation: rise .45s .12s ease forwards; opacity:0; }
   .rise-3 { animation: rise .45s .24s ease forwards; opacity:0; }
 
+  /* Loading banner slide-in/out */
+  @keyframes bannerIn {
+    from { transform: translateY(-100%); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
+  }
+  @keyframes bannerOut {
+    from { transform: translateY(0);     opacity: 1; }
+    to   { transform: translateY(-100%); opacity: 0; }
+  }
+  @keyframes progressPulse {
+    0%,100% { opacity: 0.5; }
+    50%     { opacity: 1;   }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position:  400px 0; }
+  }
+
   /* Amber pulse on CTA */
   @keyframes ctapulse {
     0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.45); }
@@ -120,6 +137,180 @@ const RunwayDots = () => (
   </div>
 );
 
+/* ── LoadingBanner ───────────────────────────────────────────────────────────
+   Full-width sticky banner shown from the moment the user hits
+   "Run Flight Intelligence" until isLoading becomes false.
+   Three phases:
+     1. Resolving airports  (no scanStatus, no flights yet)
+     2. Scanning city pairs  (scanStatus present, flights popping in)
+     3. Loading AI insight   (scanStatus null again, flights present)     */
+
+const LoadingBanner = ({ isLoading, scanStatus, lastScan, flightCount, flexDate }) => {
+  const [visible, setVisible] = React.useState(false);
+  const [exiting, setExiting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isLoading) {
+      setExiting(false);
+      setVisible(true);
+    } else if (visible) {
+      // Slide out gracefully then unmount
+      setExiting(true);
+      const t = setTimeout(() => { setVisible(false); setExiting(false); }, 400);
+      return () => clearTimeout(t);
+    }
+  }, [isLoading]);
+
+  if (!visible) return null;
+
+  // Determine current phase
+  // Use live scanStatus if available; fall back to lastScan to bridge
+  // the gap between pairs (when scanStatus is momentarily null mid-stream).
+  // Only enter 'insight' phase after the 'done' event fires — detected by
+  // scanStatus being null AND flightCount > 0 AND lastScan having been set.
+  const activeScan = scanStatus || lastScan;
+  const phase = !activeScan && flightCount === 0 ? 'airports'
+              : scanStatus !== null               ? 'scanning'
+              : lastScan && flightCount === 0     ? 'scanning'
+              : lastScan && scanStatus === null    ? 'insight'
+              : flightCount > 0                   ? 'insight'
+              :                                     'airports';
+
+  const phaseConfig = {
+    airports: {
+      icon:  '🗺',
+      label: 'RESOLVING AIRPORTS',
+      sub:   'Locating your origin city and all nearby airports via Amadeus...',
+      color: 'var(--electric)',
+      bg:    'rgba(56,189,248,0.08)',
+      border:'rgba(56,189,248,0.25)',
+    },
+    scanning: {
+      icon:  '✈',
+      label: `SCANNING ${activeScan?.origin} → ${activeScan?.dest}`,
+      sub:   `${activeScan?.origin_name || activeScan?.origin}  →  ${activeScan?.dest_name || activeScan?.dest}  ·  pair ${activeScan?.combo} of ${activeScan?.total}${flightCount > 0 ? `  ·  ${flightCount} flights found so far` : ''}`,
+      color: 'var(--amber)',
+      bg:    'rgba(245,158,11,0.08)',
+      border:'rgba(245,158,11,0.3)',
+    },
+    insight: {
+      icon:  '🤖',
+      label: 'GENERATING AI INSIGHT',
+      sub:   `Scraping complete — ${flightCount} flights loaded. Gemini is analysing fares, holidays & booking window...`,
+      color: '#a78bfa',
+      bg:    'rgba(167,139,250,0.08)',
+      border:'rgba(167,139,250,0.3)',
+    },
+  };
+
+  const { icon, label, sub, color, bg, border } = phaseConfig[phase];
+
+  // Progress bar width
+  const progressPct = phase === 'airports' ? 8
+                    : phase === 'scanning'  ? 8 + ((activeScan?.combo / activeScan?.total) * 72)
+                    : 92;
+
+  return (
+    <div style={{
+      position: 'sticky',
+      top: 0,
+      zIndex: 200,
+      animation: exiting ? 'bannerOut 0.35s ease forwards' : 'bannerIn 0.3s ease forwards',
+      background: bg,
+      borderBottom: `1px solid ${border}`,
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+    }}>
+      {/* Main content row */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '14px',
+        padding: '9px 32px',
+        maxWidth: '1600px', margin: '0 auto',
+      }}>
+        {/* Animated icon */}
+        <span style={{
+          fontSize: '16px', flexShrink: 0,
+          display: 'inline-block',
+          animation: phase === 'scanning' ? 'none' : 'progressPulse 1.2s ease-in-out infinite',
+          ...(phase === 'scanning' ? { animation: 'ctapulse 0.7s ease-in-out infinite' } : {}),
+        }}>{icon}</span>
+
+        {/* Text block */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+            <span style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: '10px',
+              fontWeight: 700, letterSpacing: '.18em', color,
+              textTransform: 'uppercase',
+            }}>{label}</span>
+            {flexDate && (
+              <span style={{
+                fontFamily: "'IBM Plex Mono', monospace", fontSize: '8px',
+                letterSpacing: '.12em', padding: '1px 6px', borderRadius: '20px',
+                background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)',
+                color: 'var(--amber)',
+              }}>±3 DAYS MODE</span>
+            )}
+          </div>
+          <div style={{
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: '9px',
+            color: 'var(--text-secondary)', letterSpacing: '.04em',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{sub}</div>
+        </div>
+
+        {/* Spinner dots */}
+        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{
+              width: '5px', height: '5px', borderRadius: '50%', background: color,
+              animation: `progressPulse 1s ${i * 0.2}s ease-in-out infinite`,
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: '2px', background: 'rgba(255,255,255,0.05)' }}>
+        <div style={{
+          height: '100%',
+          width: `${progressPct}%`,
+          background: `linear-gradient(90deg, ${color} 0%, transparent 100%)`,
+          transition: 'width 0.6s ease',
+          backgroundSize: '400px 100%',
+          animation: phase === 'insight' ? 'shimmer 1.5s linear infinite' : 'none',
+        }} />
+      </div>
+    </div>
+  );
+};
+
+const ScanIndicator = ({ status, totalFlights }) => {
+  if (!status) return null;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:'10px', fontFamily:"'IBM Plex Mono',monospace" }}>
+      <span style={{ fontSize:'13px', animation:'ctapulse 0.8s ease-in-out infinite', display:'inline-block' }}>✈</span>
+      <span style={{ fontSize:'10px', color:'var(--electric)', letterSpacing:'.05em' }}>
+        <span style={{ color:'var(--text-secondary)' }}>SCANNING </span>
+        <span style={{ fontWeight:700 }}>{status.origin_name || status.origin}</span>
+        <span style={{ color:'var(--text-muted)', margin:'0 4px' }}>→</span>
+        <span style={{ fontWeight:700 }}>{status.dest_name || status.dest}</span>
+      </span>
+      <span style={{
+        fontSize:'9px', letterSpacing:'.12em', fontWeight:700,
+        padding:'2px 7px', borderRadius:'20px',
+        background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)',
+        color:'var(--electric)',
+      }}>{status.combo}/{status.total}</span>
+      {totalFlights > 0 && (
+        <span style={{ fontSize:'9px', color:'var(--text-muted)', letterSpacing:'.08em' }}>
+          {totalFlights} found so far
+        </span>
+      )}
+    </div>
+  );
+};
+
 const Tag = ({ children, color = 'electric' }) => {
   const c = color === 'amber' ? { bg:'var(--amber-dim)', text:'var(--amber)', border:'var(--amber-dim)' }
                               : { bg:'var(--electric-dim)', text:'var(--electric)', border:'var(--electric-dim)' };
@@ -160,7 +351,7 @@ const TopPickCard = ({ flight, rank }) => {
     <div style={{
       background: 'linear-gradient(145deg, #0e2038 0%, #07111c 100%)',
       border: `1px solid ${accentDim}`,
-      borderRadius:'14px', padding:'22px', position:'relative', overflow:'hidden',
+      borderRadius:'12px', padding:'14px', position:'relative', overflow:'hidden',
     }}>
       {/* Triangle corner accent */}
       <div style={{
@@ -199,7 +390,7 @@ const TopPickCard = ({ flight, rank }) => {
 
       {/* Price + airline */}
       <div style={{
-        fontFamily:"'Playfair Display',serif", fontSize:'36px', fontWeight:900,
+        fontFamily:"'Playfair Display',serif", fontSize:'22px', fontWeight:900,
         color:'var(--text-primary)', lineHeight:1, marginBottom:'3px',
       }}>
         ₹{(flight.price ?? 0).toLocaleString('en-IN')}
@@ -214,11 +405,11 @@ const TopPickCard = ({ flight, rank }) => {
       {/* Time row — always shown; fields show — if scraping missed them */}
         <div style={{
           display:'flex', alignItems:'center', justifyContent:'space-between',
-          background:'rgba(0,0,0,0.3)', borderRadius:'8px', padding:'10px 12px',
-          marginBottom:'16px',
+          background:'rgba(0,0,0,0.3)', borderRadius:'8px', padding:'7px 8px',
+          marginBottom:'10px',
         }}>
           <div style={{ textAlign:'center' }}>
-            <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'15px', fontWeight:700, color:'var(--text-primary)' }}>
+            <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'12px', fontWeight:700, color:'var(--text-primary)' }}>
               {flight.departure_time || '—'}
             </div>
             <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px', color:'var(--text-muted)', marginTop:'2px' }}>
@@ -238,7 +429,7 @@ const TopPickCard = ({ flight, rank }) => {
             </div>
           </div>
           <div style={{ textAlign:'center' }}>
-            <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'15px', fontWeight:700, color:'var(--text-primary)' }}>
+            <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'12px', fontWeight:700, color:'var(--text-primary)' }}>
               {flight.arrival_time || '—'}
             </div>
             <div style={{ fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px', color:'var(--text-muted)', marginTop:'2px' }}>
@@ -280,16 +471,21 @@ const NavigatorUI = () => {
   const [confirmedDest,   setConfirmedDest]   = useState("Kolkata");
   const [flexDate, setFlexDate]           = useState(false);   // ±3 day flexible search
   const [flexProgress, setFlexProgress]   = useState({ done: 0, total: 0 }); // progress counter
+  // Streaming scan status — shows "Scanning PNQ → CCU (2/6)" while scraping
+  const [scanStatus, setScanStatus] = useState(null);
+  // { origin, origin_name, dest, dest_name, combo, total } | null
+  // Holds last known status so banner stays in 'scanning' phase between pairs
+  const lastScanRef = useRef(null);
 
-  const [flights, setFlights] = useState([]);
-  const [insight, setInsight] = useState(null);
+  const [flights, setFlights] = useState(mockResults.all_options ?? []);
+  const [insight, setInsight] = useState(mockResults.ai_insight ?? null);
   const [sortOrder, setSortOrder]     = useState('asc');
   const [selectedFlight, setSelectedFlight] = useState(null);
 
   // Primary IATA codes locked at search time — passed to ResultsGrid so
   // nearby badges can say "Alt. Origin", "Alt. Destination", or "Alt. Origin + Dest"
-  const [primaryOrigin, setPrimaryOrigin] = useState("");
-  const [primaryDest,   setPrimaryDest]   = useState("");
+  const [primaryOrigin, setPrimaryOrigin] = useState(mockResults.all_options?.[0]?.origin ?? "");
+  const [primaryDest,   setPrimaryDest]   = useState(mockResults.all_options?.[0]?.destination ?? "");
 
   const handleSwap = () => {
     setOrigin(destination);
@@ -370,15 +566,92 @@ const NavigatorUI = () => {
     return Array.from(seen.values());
   }, []);
 
-  // ── Single date search ────────────────────────────────────────────────────
-  const searchOneDate = useCallback(async (travelDate) => {
-    const res = await axios.post('http://127.0.0.1:8000/search', {
+  // ── Streaming search — single date via /search/stream (NDJSON) ─────────────
+  const streamSearch = useCallback(async (travelDate) => {
+    const params = new URLSearchParams({
       source_city:      origin.trim(),
       destination_city: destination.trim(),
       travel_date:      travelDate,
     });
-    return res.data?.all_options ?? [];
-  }, [origin, destination]);
+
+    const response = await fetch(
+      `http://127.0.0.1:8000/search/stream?${params}`,
+      { method: 'GET', headers: { Accept: 'application/x-ndjson' } }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Stream error ${response.status}: ${errText}`);
+    }
+
+    const reader  = response.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+
+    // Accumulate all flights from this stream for returning to caller
+    const allFlights = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete last line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        let event;
+        try { event = JSON.parse(trimmed); }
+        catch { continue; }
+
+        if (event.type === 'airports') {
+          // We now know how many combos are coming
+          const total = (event.origins?.length ?? 1) * (event.dests?.length ?? 1);
+          setFlexProgress({ done: 0, total });
+          // Lock in primary IATA codes immediately
+          if (event.origins?.[0]) setPrimaryOrigin(event.origins[0]);
+          if (event.dests?.[0])   setPrimaryDest(event.dests[0]);
+
+        } else if (event.type === 'status') {
+          // Update the scanning indicator
+          const newStatus = {
+            origin:      event.origin,
+            origin_name: event.origin_name,
+            dest:        event.dest,
+            dest_name:   event.dest_name,
+            combo:       event.combo,
+            total:       event.total,
+          };
+          lastScanRef.current = newStatus;
+          setScanStatus(newStatus);
+          setFlexProgress({ done: event.combo - 1, total: event.total });
+
+        } else if (event.type === 'flights') {
+          // Pop new flights into the grid immediately
+          const incoming = event.flights ?? [];
+          allFlights.push(...incoming);
+          setFlights(prev => {
+            const merged = deduplicateFlights([...prev, ...incoming]);
+            merged.sort((a, b) => a.price - b.price);
+            return merged;
+          });
+          setFlexProgress(p => ({ ...p, done: event.combo ?? p.done + 1 }));
+
+        } else if (event.type === 'done') {
+          setScanStatus(null);   // triggers insight phase — lastScanRef retains last pair
+          setFlexProgress({ done: event.total_flights ?? 0, total: 0 });
+
+        } else if (event.type === 'error') {
+          console.warn('Stream error event:', event.msg);
+        }
+      }
+    }
+
+    return allFlights;
+  }, [origin, destination, deduplicateFlights]);
 
   // ── Main search handler ───────────────────────────────────────────────────
   const handleSearch = async () => {
@@ -393,72 +666,65 @@ const NavigatorUI = () => {
     setInsight(null);
     setPrimaryOrigin('');
     setPrimaryDest('');
+    setScanStatus(null);
+    lastScanRef.current = null;
     setSelectedFlight(null);
     setConfirmedOrigin(origin.trim());
     setConfirmedDest(destination.trim());
 
     try {
       if (!flexDate) {
-        // ── Standard single-date search ──────────────────────────────────
-        const res = await axios.post('http://127.0.0.1:8000/search', {
-          source_city:      origin.trim(),
-          destination_city: destination.trim(),
-          travel_date:      date,
-        });
-        const options = res.data?.all_options ?? [];
-        setFlights(options);
-        setInsight(res.data?.ai_insight ?? null);
-        const pf = options.find(f => !f.is_nearby) ?? options[0];
-        if (pf) { setPrimaryOrigin(pf.origin); setPrimaryDest(pf.destination); }
+        // ── Single date streaming search ──────────────────────────────────
+        const allFlights = await streamSearch(date);
+
+        // Once stream is done, request Gemini insight via existing /search
+        // (insight needs the full flight list — not worth streaming separately)
+        if (allFlights.length > 0) {
+          const insightRes = await fetch('http://127.0.0.1:8000/search', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              source_city:      origin.trim(),
+              destination_city: destination.trim(),
+              travel_date:      date,
+            }),
+          });
+          const insightData = await insightRes.json();
+          setInsight(insightData?.ai_insight ?? null);
+        }
 
       } else {
-        // ── Flexible ±3 day search ────────────────────────────────────────
-        // Fire all 7 dates in parallel. Show a live progress counter.
-        // Results stream in as each date completes — UI updates incrementally.
+        // ── Flexible ±3 days: stream each date sequentially ───────────────
+        // Sequential (not parallel) to avoid hammering Playwright with 7
+        // simultaneous browsers. Results still pop in city-by-city.
         const dates = getFlexDates(date);
         setFlexProgress({ done: 0, total: dates.length });
 
-        const results = await Promise.allSettled(
-          dates.map(d =>
-            searchOneDate(d).then(options => {
-              // Stream partial results in as each date resolves
-              setFlights(prev => {
-                const merged = deduplicateFlights([...prev, ...options]);
-                merged.sort((a, b) => a.price - b.price);
-                return merged;
-              });
-              setFlexProgress(p => ({ ...p, done: p.done + 1 }));
-              return options;
-            })
-          )
-        );
-
-        // Use the first successful result to anchor primary IATA codes
-        const firstSuccess = results.find(r => r.status === 'fulfilled' && r.value?.length);
-        if (firstSuccess) {
-          const pf = firstSuccess.value.find(f => !f.is_nearby) ?? firstSuccess.value[0];
-          if (pf) { setPrimaryOrigin(pf.origin); setPrimaryDest(pf.destination); }
+        for (const d of dates) {
+          await streamSearch(d);
         }
 
-        // Request Gemini insight using the base date search result
-        // (insight on the full merged set would be overwhelming)
-        const baseResult = results[3]; // index 3 = offset 0 = the selected date
-        if (baseResult?.status === 'fulfilled') {
-          const baseRes = await axios.post('http://127.0.0.1:8000/search', {
+        // Gemini insight on the base date
+        const insightRes = await fetch('http://127.0.0.1:8000/search', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             source_city:      origin.trim(),
             destination_city: destination.trim(),
             travel_date:      date,
-          });
-          setInsight(baseRes.data?.ai_insight ?? null);
-        }
+          }),
+        });
+        const insightData = await insightRes.json();
+        setInsight(insightData?.ai_insight ?? null);
       }
 
     } catch (err) {
-      setErrorCode(err.response?.status ?? 'NETWORK_ERROR');
-      setErrorMsg(err.response?.data?.detail ?? '');
+      setErrorCode(err?.status ?? 'NETWORK_ERROR');
+      setErrorMsg(err?.message ?? 'Connection failed');
       setHasError(true);
     } finally {
       setIsLoading(false);
+      setScanStatus(null);
       setFlexProgress({ done: 0, total: 0 });
     }
   };
@@ -514,123 +780,133 @@ const NavigatorUI = () => {
           </div>
         </header>
 
-        {/* ── Hero / Search panel ───────────────────────────────────────── */}
+        {/* ── Search panel ─────────────────────────────────────────────────── */}
         <div style={{
-          background:'linear-gradient(180deg, var(--panel) 0%, var(--ink) 100%)',
-          borderBottom:'1px solid var(--border)', padding:'18px 32px 20px',
+          background:'linear-gradient(135deg, #0f2744 0%, #112240 40%, #0d1f35 100%)',
+          borderBottom:'1px solid #1e3a5f',
+          boxShadow:'0 4px 24px rgba(0,0,0,0.3)',
+          padding:'20px 32px 22px',
         }}>
+          <div style={{ maxWidth:'62%' }}>
 
-          {/* Compact headline row */}
-          <div className="rise" style={{ marginBottom:'16px', display:'flex', alignItems:'baseline', gap:'16px', flexWrap:'wrap' }}>
-            <h1 style={{
-              fontFamily:"'Playfair Display',serif",
-              fontSize:'clamp(18px,2.2vw,28px)', fontWeight:900,
-              lineHeight:1.1, letterSpacing:'-.02em', color:'var(--text-primary)',
-              whiteSpace:'nowrap',
+            {/* Headline */}
+            <div className="rise" style={{ marginBottom:'16px', display:'flex', alignItems:'baseline', gap:'14px', flexWrap:'wrap' }}>
+              <h1 style={{
+                fontFamily:"'Playfair Display',serif",
+                fontSize:'clamp(16px,1.8vw,24px)', fontWeight:900,
+                lineHeight:1.1, letterSpacing:'-.02em', color:'#f0f7ff',
+                whiteSpace:'nowrap',
+              }}>
+                Find the Cheapest&nbsp;<span style={{ color:'#60c8f5' }}>Flight Home.</span>
+              </h1>
+              <p style={{
+                fontFamily:"'Crimson Pro',serif", fontSize:'13px', fontStyle:'italic',
+                color:'#7aa3c4', whiteSpace:'nowrap',
+              }}>
+                We scan your city and every nearby airport — so you never overpay.
+              </p>
+            </div>
+
+            {/* 2-column card: left = cities, right = date + CTA */}
+            <div className="rise-2" style={{
+              display:'grid', gridTemplateColumns:'1fr 1fr',
+              gap:'16px', alignItems:'start',
             }}>
-              Find the Cheapest&nbsp;<span style={{ color:'var(--electric)' }}>Flights.</span>
-            </h1>
-            <p style={{
-              fontFamily:"'Crimson Pro',serif", fontSize:'14px', fontStyle:'italic',
-              color:'var(--text-secondary)', whiteSpace:'nowrap',
-            }}>
-              We also scan your origin and destination city and every nearby airports 
-              — so you never overpay.
-            </p>
-          </div>
 
-          {/* Search fields */}
-          <div className="rise-2" style={{
-            display:'grid',
-            gridTemplateColumns:'1fr 44px 1fr 180px auto',
-            gap:'12px', alignItems:'end', maxWidth:'920px',
-          }}>
+              {/* Left col: Origin → Destination stacked with swap */}
+              <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+                <div>
+                  <FieldLabel icon="◎">Origin City</FieldLabel>
+                  <input type="text" value={origin} onChange={e=>setOrigin(e.target.value)}
+                    placeholder="e.g. Pune" className="nav-input"
+                    style={{ ...inputStyle, background:'rgba(255,255,255,0.07)', borderColor:'#1e3a5f', color:'#f0f7ff' }} />
+                </div>
+                {/* Swap link between the two city fields */}
+                <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                  <div style={{ flex:1, height:'1px', background:'#1e3a5f' }} />
+                  <button onClick={handleSwap} aria-label="Swap" style={{
+                    padding:'3px 10px', background:'rgba(56,189,248,0.1)',
+                    border:'1px solid rgba(56,189,248,0.25)', borderRadius:'20px',
+                    color:'#60c8f5', fontSize:'11px', cursor:'pointer',
+                    fontFamily:"'IBM Plex Mono',monospace", letterSpacing:'.08em',
+                    transition:'all .2s',
+                  }}
+                  onMouseEnter={e=>{ e.currentTarget.style.background='rgba(56,189,248,0.2)'; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.background='rgba(56,189,248,0.1)'; }}
+                  >⇄ swap</button>
+                  <div style={{ flex:1, height:'1px', background:'#1e3a5f' }} />
+                </div>
+                <div>
+                  <FieldLabel icon="◎">Destination City</FieldLabel>
+                  <input type="text" value={destination} onChange={e=>setDestination(e.target.value)}
+                    placeholder="e.g. Kolkata" className="nav-input"
+                    style={{ ...inputStyle, background:'rgba(255,255,255,0.07)', borderColor:'#1e3a5f', color:'#f0f7ff' }} />
+                </div>
+              </div>
 
-            {/* Origin */}
-            <div>
-              <FieldLabel icon="◎">Origin City</FieldLabel>
-              <input type="text" value={origin} onChange={e=>setOrigin(e.target.value)}
-                placeholder="e.g. Pune" className="nav-input" style={inputStyle} />
-            </div>
+              {/* Right col: Date (with ±3 toggle) → Optimize button stacked */}
+              <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'7px' }}>
+                    <FieldLabel icon="◈">Travel Date</FieldLabel>
+                    <button
+                      onClick={() => setFlexDate(f => !f)}
+                      title="Search ±3 days around your date for cheaper options"
+                      style={{
+                        fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
+                        fontWeight:700, letterSpacing:'.12em',
+                        padding:'2px 8px', borderRadius:'20px', cursor:'pointer',
+                        border:`1px solid ${flexDate ? '#f59e0b' : '#1e3a5f'}`,
+                        background: flexDate ? 'rgba(245,158,11,0.15)' : 'transparent',
+                        color: flexDate ? '#f59e0b' : '#7aa3c4',
+                        transition:'all .2s',
+                      }}
+                    >
+                      ±3 DAYS
+                    </button>
+                  </div>
+                  <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+                    className="nav-input"
+                    min={new Date().toISOString().split('T')[0]}
+                    style={{
+                      ...inputStyle, colorScheme:'dark',
+                      background:'rgba(255,255,255,0.07)', color:'#f0f7ff',
+                      borderColor: flexDate ? '#6b3f07' : '#1e3a5f',
+                    }} />
+                  {flexDate && (
+                    <div style={{
+                      fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
+                      color:'#f59e0b', marginTop:'5px', letterSpacing:'.08em',
+                    }}>
+                      searching {date ? `${addDays(date,-3)} → ${addDays(date,3)}` : '7 dates'}
+                    </div>
+                  )}
+                </div>
 
-            {/* Swap */}
-            <div style={{ paddingBottom:'1px' }}>
-              <button onClick={handleSwap} aria-label="Swap" style={{
-                width:'44px', height:'44px', background:'var(--surface)',
-                border:'1px solid var(--border)', borderRadius:'8px',
-                color:'var(--electric)', fontSize:'16px', cursor:'pointer',
-                display:'flex', alignItems:'center', justifyContent:'center',
-                transition:'all .2s',
-              }}
-              onMouseEnter={e=>{ e.currentTarget.style.borderColor='var(--electric)'; e.currentTarget.style.color='var(--amber)'; }}
-              onMouseLeave={e=>{ e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--electric)'; }}
-              >⇄</button>
-            </div>
-
-            {/* Destination */}
-            <div>
-              <FieldLabel icon="◎">Destination City</FieldLabel>
-              <input type="text" value={destination} onChange={e=>setDestination(e.target.value)}
-                placeholder="e.g. Kolkata" className="nav-input" style={inputStyle} />
-            </div>
-
-            {/* Date + flex toggle */}
-            <div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'7px' }}>
-                <FieldLabel icon="◈">Travel Date</FieldLabel>
-                {/* ±3 day flex toggle */}
-                <button
-                  onClick={() => setFlexDate(f => !f)}
-                  title="Search ±3 days around your date for cheaper options"
+                {/* Optimize button — full width, flush below date */}
+                <button onClick={handleSearch} disabled={isLoading}
+                  className={isLoading ? '' : 'cta-pulse'}
                   style={{
-                    fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
+                    width:'100%', height:'44px',
+                    background: isLoading ? 'rgba(255,255,255,0.05)' : '#f59e0b',
+                    border: isLoading ? '1px solid #1e3a5f' : 'none',
+                    borderRadius:'8px',
+                    color: isLoading ? '#7aa3c4' : '#000',
+                    fontFamily:"'IBM Plex Mono',monospace", fontSize:'11px',
                     fontWeight:700, letterSpacing:'.12em',
-                    padding:'2px 8px', borderRadius:'20px', cursor:'pointer',
-                    border:`1px solid ${flexDate ? 'var(--amber)' : 'var(--border)'}`,
-                    background: flexDate ? 'rgba(245,158,11,0.12)' : 'transparent',
-                    color: flexDate ? 'var(--amber)' : 'var(--text-muted)',
+                    cursor: isLoading ? 'not-allowed' : 'pointer',
                     transition:'all .2s',
                   }}
                 >
-                  ±3 DAYS
+                  {isLoading
+                    ? scanStatus
+                      ? `✈ ${scanStatus.origin} → ${scanStatus.dest}`
+                      : flexDate && flexProgress.total > 0
+                        ? `● ${flexProgress.done}/${flexProgress.total} DATES`
+                        : '● CONNECTING...'
+                    : '▶ RUN FLIGHT INTELLIGENCE'}
                 </button>
               </div>
-              <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-                className="nav-input"
-                style={{
-                  ...inputStyle, colorScheme:'dark',
-                  borderColor: flexDate ? 'var(--amber-dim)' : undefined,
-                }} />
-              {flexDate && (
-                <div style={{
-                  fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
-                  color:'var(--amber)', marginTop:'5px', letterSpacing:'.08em',
-                }}>
-                  searching {date ? `${addDays(date,-3)} → ${addDays(date,3)}` : '7 dates'}
-                </div>
-              )}
-            </div>
-
-            {/* CTA */}
-            <div style={{ paddingBottom:'1px' }}>
-              <button onClick={handleSearch} disabled={isLoading}
-                className={isLoading ? '' : 'cta-pulse'}
-                style={{
-                  width:'100%', height:'44px',
-                  background: isLoading ? 'var(--surface)' : 'var(--amber)',
-                  border:'none', borderRadius:'8px',
-                  color: isLoading ? 'var(--text-muted)' : '#000',
-                  fontFamily:"'IBM Plex Mono',monospace", fontSize:'11px',
-                  fontWeight:700, letterSpacing:'.12em', cursor: isLoading ? 'not-allowed' : 'pointer',
-                  whiteSpace:'nowrap', transition:'all .2s',
-                }}
-              >
-                {isLoading
-                  ? flexDate && flexProgress.total > 0
-                    ? `● ${flexProgress.done}/${flexProgress.total} DATES`
-                    : '● SCANNING...'
-                  : '▶ OPTIMIZE'}
-              </button>
             </div>
           </div>
 
@@ -646,97 +922,119 @@ const NavigatorUI = () => {
           )}
         </div>
 
+        {/* ── Loading banner — sticky, visible for entire search duration ── */}
+        <LoadingBanner
+          isLoading={isLoading}
+          scanStatus={scanStatus}
+          lastScan={lastScanRef.current}
+          flightCount={flights.length}
+          flexDate={flexDate}
+        />
+
         {/* ── Body ─────────────────────────────────────────────────────── */}
-        <div style={{
-          display:'grid', gridTemplateColumns:'1fr 340px', gap:'24px',
-          padding:'20px 32px', maxWidth:'1400px', margin:'0 auto', alignItems:'start',
-        }}>
+        <div style={{ padding:'20px 32px', maxWidth:'1600px', margin:'0 auto' }}>
 
-          <main style={{ minWidth:0 }}>
-
-            {/* Top Picks */}
-            {!isLoading && topPicks.length > 0 && (
-              <section className="rise" style={{ marginBottom:'44px' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'16px' }}>
-                  <span style={{
-                    fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
-                    letterSpacing:'.25em', color:'var(--electric)', textTransform:'uppercase', fontWeight:700,
-                  }}>◈ Recommended Picks</span>
-                  <div style={{ flex:1, height:'1px', background:'var(--border)' }} />
-                </div>
-                <div style={{
-                  display:'grid',
-                  gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))',
-                  gap:'16px',
-                }}>
-                  {topPicks.map((f,i) => <TopPickCard key={`tp-${i}`} flight={f} rank={i} />)}
-                </div>
-              </section>
-            )}
-
-            {/* Cost Calculator — shown when a flight is selected */}
-            {selectedFlight && (
-              <CostCalculator
-                flight={selectedFlight}
-                onClose={() => setSelectedFlight(null)}
-              />
-            )}
-
-            {/* All routes */}
-            <div className="rise-2">
-              <div style={{
-                display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px',
-              }}>
-                <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                  <span style={{
-                    fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
-                    letterSpacing:'.25em', color:'var(--text-muted)', textTransform:'uppercase',
-                  }}>◈ All Available Routes</span>
-                  {!isLoading && sortedFlights.length > 0 && (
-                    <Tag>{sortedFlights.length} ROUTES</Tag>
-                  )}
-                  {flexDate && !isLoading && (
-                    <Tag color="amber">±3 DAYS</Tag>
-                  )}
-                  {flexDate && isLoading && flexProgress.total > 0 && (
+          {/* ── TOP ZONE: Picks (left) + Gemini Insight (right, 1.4fr) ── */}
+          <div style={{
+            display:'grid', gridTemplateColumns:'0.6fr 1.4fr', gap:'24px',
+            alignItems:'start', marginBottom:'8px',
+          }}>
+            {/* Picks — left */}
+            <div>
+              {!isLoading && topPicks.length > 0 && (
+                <section className="rise">
+                  <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'12px' }}>
                     <span style={{
                       fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
-                      color:'var(--amber)', letterSpacing:'.1em',
-                    }}>
-                      {flexProgress.done}/{flexProgress.total} dates loaded
-                    </span>
-                  )}
-                </div>
-                <select value={sortOrder} onChange={e=>setSortOrder(e.target.value)}
-                  className="nav-select"
-                  style={{
-                    background:'var(--surface)', border:'1px solid var(--border)',
-                    borderRadius:'6px', padding:'6px 12px',
-                    color:'var(--text-secondary)', fontFamily:"'IBM Plex Mono',monospace",
-                    fontSize:'10px', letterSpacing:'.05em',
-                  }}
-                >
-                  <option value="asc">PRICE ↑ LOW → HIGH</option>
-                  <option value="desc">PRICE ↓ HIGH → LOW</option>
-                  <option value="date">DATE ↑ EARLIEST FIRST</option>
-                  <option value="dur">DURATION ↑ SHORTEST FIRST</option>
-                </select>
-              </div>
-              {isLoading ? <LoadingSkeleton /> : <ResultsGrid flights={sortedFlights} primaryOrigin={primaryOrigin} primaryDest={primaryDest} flexDate={flexDate} onSelect={setSelectedFlight} selectedFlight={selectedFlight} />}
+                      letterSpacing:'.25em', color:'var(--electric)', textTransform:'uppercase', fontWeight:700,
+                    }}>◈ Recommended Picks</span>
+                    <div style={{ flex:1, height:'1px', background:'var(--border)' }} />
+                  </div>
+                  <div style={{
+                    display:'grid',
+                    gridTemplateColumns:'repeat(auto-fill, minmax(180px, 200px))',
+                    gap:'12px',
+                  }}>
+                    {topPicks.map((f,i) => <TopPickCard key={`tp-${i}`} flight={f} rank={i} />)}
+                  </div>
+                </section>
+              )}
             </div>
-          </main>
 
-          {/* Right column — chatbot stacked above insight sidebar */}
-          <aside style={{
-            position:'sticky',
-            top:'24px',
-            display:'flex',
-            flexDirection:'column',
-            gap:'16px',
-            maxHeight:'calc(100vh - 48px)',
+            {/* Gemini Insight — right, takes 1.4fr (was chatbot width) */}
+            <div style={{
+              position:'sticky', top:'16px',
+              maxHeight:'calc(50vh - 16px)',
+              overflowY:'auto', overflowX:'hidden',
+            }}>
+              <InsightSidebar insight={insight} />
+            </div>
+          </div>
+
+          {/* ── BOTTOM ZONE: Routes (left) + Flight Assistant (right, 480px) ── */}
+          <div style={{
+            display:'grid', gridTemplateColumns:'1fr 480px', gap:'24px',
+            alignItems:'start',
           }}>
-            {/* Chatbot — fixed height, never squeezed */}
-            <div style={{ flexShrink:0 }}>
+            {/* Routes — left */}
+            <div style={{ minWidth:0 }}>
+              {/* Cost Calculator */}
+              {selectedFlight && (
+                <CostCalculator
+                  flight={selectedFlight}
+                  onClose={() => setSelectedFlight(null)}
+                />
+              )}
+
+              <div className="rise-2">
+                <div style={{
+                  display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                    <span style={{
+                      fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
+                      letterSpacing:'.25em', color:'var(--text-muted)', textTransform:'uppercase',
+                    }}>◈ All Available Routes</span>
+                    {!isLoading && sortedFlights.length > 0 && (
+                      <Tag>{sortedFlights.length} ROUTES</Tag>
+                    )}
+                    {flexDate && !isLoading && (
+                      <Tag color="amber">±3 DAYS</Tag>
+                    )}
+                    {/* Live scan indicator — city pair currently being scraped */}
+                    {isLoading && (
+                      <ScanIndicator status={scanStatus} totalFlights={flights.length} />
+                    )}
+                    {flexDate && isLoading && flexProgress.total > 0 && (
+                      <span style={{
+                        fontFamily:"'IBM Plex Mono',monospace", fontSize:'9px',
+                        color:'var(--amber)', letterSpacing:'.1em',
+                      }}>
+                        {flexProgress.done}/{flexProgress.total} dates scanned
+                      </span>
+                    )}
+                  </div>
+                  <select value={sortOrder} onChange={e=>setSortOrder(e.target.value)}
+                    className="nav-select"
+                    style={{
+                      background:'var(--surface)', border:'1px solid var(--border)',
+                      borderRadius:'6px', padding:'6px 12px',
+                      color:'var(--text-secondary)', fontFamily:"'IBM Plex Mono',monospace",
+                      fontSize:'10px', letterSpacing:'.05em',
+                    }}
+                  >
+                    <option value="asc">PRICE ↑ LOW → HIGH</option>
+                    <option value="desc">PRICE ↓ HIGH → LOW</option>
+                    <option value="date">DATE ↑ EARLIEST FIRST</option>
+                    <option value="dur">DURATION ↑ SHORTEST FIRST</option>
+                  </select>
+                </div>
+                {isLoading ? <LoadingSkeleton /> : <ResultsGrid flights={sortedFlights} primaryOrigin={primaryOrigin} primaryDest={primaryDest} flexDate={flexDate} onSelect={setSelectedFlight} selectedFlight={selectedFlight} />}
+              </div>
+            </div>
+
+            {/* Flight Assistant — right, 480px (was Gemini width) */}
+            <div style={{ position:'sticky', top:'16px' }}>
               <FlightChatbot
                 flights={flights}
                 originCity={confirmedOrigin}
@@ -744,11 +1042,7 @@ const NavigatorUI = () => {
                 isSearching={isLoading}
               />
             </div>
-            {/* Insight — takes remaining space, scrolls internally */}
-            <div style={{ flex:1, minHeight:0, overflowY:'auto', overflowX:'hidden' }}>
-              <InsightSidebar insight={insight} />
-            </div>
-          </aside>
+          </div>
         </div>
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
