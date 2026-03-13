@@ -320,12 +320,15 @@ Address these points in order:
    Using your training knowledge of Indian domestic aviation fare patterns over the last 3 years,
    provide the typical fare range for the {origin_city} → {dest_name} route specifically during
    the 10-day window around {date_context} (i.e. the same calendar period in prior years).
-   - State the historical low and high as a ₹ range, e.g. "Historically ₹X,XXX – ₹X,XXX for this window."
-   - Then compare the current cheapest (₹{cheapest_overall.price:,.0f}) against that range:
-     use one of these three labels:
+   - You MUST include this exact sentence structure (fill in the ₹ values):
+     "fares for this route typically range from ₹X,XXX – ₹X,XXX"
+   - Then on the same line compare the current cheapest price. You MUST use this exact phrasing:
+     "The current cheapest flight at ₹{cheapest_overall.price:,.0f} is [LABEL]"
+     where [LABEL] is exactly one of:
      · **BELOW HISTORICAL RANGE** — current price is unusually cheap, strong buy signal.
      · **WITHIN HISTORICAL RANGE** — current price is normal, no urgency either way.
      · **ABOVE HISTORICAL RANGE** — current price is elevated, advise caution or flexibility.
+   - Follow with 1–2 sentences of interpretation.
    - If you have insufficient historical data for this specific route, say so honestly and
      use the broader Indian domestic market range for that calendar period as a fallback,
      clearly labelling it as a market-level estimate rather than route-specific data.
@@ -341,8 +344,8 @@ Address these points in order:
    should the user book now or wait?
    Factor in that Indian domestic fares typically rise 15–25% in the final 7 days before travel.
 
-4. **One-line verdict**: End with a single bold sentence — either **"You can Book now."** or
-   **"It is safe to wait X more days."** — directly informed by the historical range label above.
+4. **One-line verdict**: End with a single bold sentence — either **"Book now."** or
+   **"Safe to wait X more days."** — directly informed by the historical range label above.
 
 Keep the tone direct, warm, and honest. Write for a cost-conscious Indian traveller.
 No generic advice — every rupee figure and historical claim must be grounded in real data

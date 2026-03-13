@@ -209,7 +209,38 @@ async def search_flights_stream(
     )
 
 
-# ── Chat request model ───────────────────────────────────────────────────────
+# ── Insight-only request model ───────────────────────────────────────────────
+
+class InsightRequest(BaseModel):
+    source_city:      str
+    destination_city: str
+    travel_date:      str
+    flights:          List[FlightOption] = []
+
+
+@app.post("/insight")
+async def get_insight(request: InsightRequest):
+    """
+    Gemini insight only — no scraping.
+    Called by the frontend after /search/stream completes, passing the
+    already-scraped flights so Gemini can analyse them without re-running
+    the full LangGraph pipeline a second time.
+    """
+    if not request.flights:
+        return {"ai_insight": "No flight data provided for analysis."}
+
+    try:
+        insight = await gemini_svc.get_recommendation(
+            origin_city = request.source_city,
+            dest_name   = request.destination_city,
+            flights     = request.flights,
+        )
+        return {"ai_insight": insight}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 class ChatTurn(BaseModel):
     role: str   # "user" or "model"
     text: str
