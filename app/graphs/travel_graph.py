@@ -199,14 +199,12 @@ async def scrape_google_flights_node(state: TravelState):
                     print(f"   🔍 {len(elements)} elements found — collecting top 5 cheapest.")
 
                     pair_flights: list[FlightOption] = []
-                    first_element = True
 
                     for element in elements:
                         aria_text = await element.get_attribute("aria-label")
                         if not aria_text:
                             continue
 
-                        # Debug print for first element per pair — remove once timing confirmed
                         flight = parse_aria_text(
                             aria_text      = aria_text,
                             origin_iata    = origin_iata,
@@ -215,9 +213,8 @@ async def scrape_google_flights_node(state: TravelState):
                             primary_dest   = primary_dest,
                             departure_date = date,
                             airport_names  = airport_names,
-                            debug          = first_element,
+                            debug          = False,
                         )
-                        first_element = False
 
                         if flight:
                             pair_flights.append(flight)
@@ -319,7 +316,6 @@ async def scrape_and_stream(
                     )
 
                     pair_flights: list[FlightOption] = []
-                    first_element = True
                     for element in elements:
                         aria_text = await element.get_attribute("aria-label")
                         if not aria_text:
@@ -332,9 +328,8 @@ async def scrape_and_stream(
                             primary_dest   = primary_dest,
                             departure_date = date,
                             airport_names  = airport_names,
-                            debug          = first_element,
+                            debug          = False,
                         )
-                        first_element = False
                         if flight:
                             pair_flights.append(flight)
 

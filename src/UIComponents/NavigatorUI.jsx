@@ -7,6 +7,8 @@ import LoadingSkeleton from './LoadingSkeleton';
 import FlightChatbot from './FlightChatBot';
 import CostCalculator from './CostCalculator';
 
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
+
 /* --- Global styles injected once into <head> --- */
 const GLOBAL_STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=IBM+Plex+Mono:wght@400;500;700&family=Crimson+Pro:ital,wght@0,300;1,300&display=swap');
@@ -307,6 +309,7 @@ const NavigatorUI = () => {
 
   const [flights, setFlights] = useState(mockResults.all_options ?? []);
   const [insight, setInsight] = useState(mockResults.ai_insight ?? null);
+  const [insightLoading, setInsightLoading] = useState(false);
   const [sortOrder, setSortOrder]     = useState('asc');
   const [selectedFlight, setSelectedFlight] = useState(null);
 
@@ -368,7 +371,7 @@ const NavigatorUI = () => {
 
   const streamSearch = useCallback(async (travelDate) => {
     const params = new URLSearchParams({ source_city: origin.trim(), destination_city: destination.trim(), travel_date: travelDate });
-    const response = await fetch(`http://127.0.0.1:8000/search/stream?${params}`, { method:'GET', headers:{ Accept:'application/x-ndjson' } });
+    const response = await fetch(`${API_BASE}/search/stream?${params}`, { method:'GET', headers:{ Accept:'application/x-ndjson' } });
     if (!response.ok) { const errText = await response.text(); throw new Error(`Stream error ${response.status}: ${errText}`); }
 
     const reader  = response.body.getReader();
@@ -421,6 +424,7 @@ const NavigatorUI = () => {
     setHasError(false);
     setFlights([]);
     setInsight(null);
+    setInsightLoading(false);
     setPrimaryOrigin('');
     setPrimaryDest('');
     setScanStatus(null);
@@ -433,7 +437,8 @@ const NavigatorUI = () => {
       if (!flexDate) {
         const allFlights = await streamSearch(date);
         if (allFlights.length > 0) {
-          const insightRes = await fetch('http://127.0.0.1:8000/insight', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source_city: origin.trim(), destination_city: destination.trim(), travel_date: date, flights: allFlights }) });
+          setInsightLoading(true);
+          const insightRes = await fetch(`${API_BASE}/insight`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source_city: origin.trim(), destination_city: destination.trim(), travel_date: date, flights: allFlights }) });
           const insightData = await insightRes.json();
           setInsight(insightData?.ai_insight ?? null);
         }
@@ -442,7 +447,8 @@ const NavigatorUI = () => {
         setFlexProgress({ done: 0, total: dates.length });
         const allFlights = [];
         for (const d of dates) { const df = await streamSearch(d); allFlights.push(...df); }
-        const insightRes = await fetch('http://127.0.0.1:8000/insight', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source_city: origin.trim(), destination_city: destination.trim(), travel_date: date, flights: allFlights }) });
+        setInsightLoading(true);
+        const insightRes = await fetch(`${API_BASE}/insight`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source_city: origin.trim(), destination_city: destination.trim(), travel_date: date, flights: allFlights }) });
         const insightData = await insightRes.json();
         setInsight(insightData?.ai_insight ?? null);
       }
@@ -452,6 +458,7 @@ const NavigatorUI = () => {
       setHasError(true);
     } finally {
       setIsLoading(false);
+      setInsightLoading(false);
       setScanStatus(null);
       setFlexProgress({ done: 0, total: 0 });
     }
@@ -571,8 +578,8 @@ const NavigatorUI = () => {
             </div>
 
             <div style={{ position:'sticky', top:'16px', maxHeight:'calc(40vh - 16px)', overflowY:'auto', overflowX:'hidden' }}>
-              {!isLoading && sortedFlights.length > 0 && (
-                <InsightSidebar insight={insight} />
+              {(!isLoading && sortedFlights.length > 0) && (
+                <InsightSidebar insight={insight} isLoading={insightLoading} />
               )}
             </div>
           </div>

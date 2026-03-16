@@ -58,18 +58,15 @@ const renderInsightText = (text) => {
   });
 };
 
-const InsightSidebar = ({ insight }) => {
+const InsightSidebar = ({ insight, isLoading = false }) => {
   const [opacity, setOpacity]       = useState(0);
   const [translateY, setTranslateY] = useState(12);
 
   useEffect(() => {
-    // Reset to hidden on every insight change — including when set to null.
-    // This ensures the old content visibly disappears before new content fades in.
     setOpacity(0);
     setTranslateY(12);
 
     if (insight) {
-      // Small delay so the reset (above) renders first, then fade in
       const t = setTimeout(() => {
         setOpacity(1);
         setTranslateY(0);
@@ -77,8 +74,6 @@ const InsightSidebar = ({ insight }) => {
       return () => clearTimeout(t);
     }
   }, [insight]);
-
-  const isLoading = !insight;
 
   return (
     <div style={{

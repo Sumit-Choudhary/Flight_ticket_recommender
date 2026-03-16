@@ -46,7 +46,7 @@ def parse_aria_text(
     primary_dest: str,
     departure_date: str,
     airport_names: dict,
-    debug: bool = False,
+    debug: bool = False,   # kept for backward compat — no longer used
 ) -> Optional[FlightOption]:
     """
     Parses a single Google Flights aria-label string into a FlightOption.
@@ -55,22 +55,7 @@ def parse_aria_text(
     (price + airline). Timing fields (departure_time, arrival_time, duration)
     gracefully degrade to empty string if the pattern doesn't match — the UI
     shows '—' placeholders rather than crashing.
-
-    Args:
-        aria_text      : raw aria-label string from the DOM element
-        origin_iata    : IATA code of the origin airport for this scrape pair
-        dest_iata      : IATA code of the destination airport for this scrape pair
-        primary_origin : primary origin IATA (first in origin_airports list)
-        primary_dest   : primary destination IATA (state["dest_city"])
-        departure_date : search date string YYYY-MM-DD
-        airport_names  : dict mapping IATA → full airport name
-        debug          : if True, print the raw aria_text for diagnosis
-
-    Returns:
-        FlightOption or None
     """
-    if debug:
-        print(f"   🔎 ARIA SAMPLE: {aria_text[:180]}")
 
     price_match   = _PRICE_RE.search(aria_text)
     airline_match = _AIRLINE_RE.search(aria_text)

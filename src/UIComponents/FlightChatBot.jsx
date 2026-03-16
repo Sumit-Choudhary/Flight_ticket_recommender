@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
 
 /**
  * FlightChatbot
@@ -44,14 +45,19 @@ const FlightChatbot = ({ flights = [], originCity = "", destName = "", isSearchi
     setLoading(true);
 
     try {
-      const res = await axios.post('http://127.0.0.1:8000/chat', {
-        message:     text,
-        history:     history,          // send history BEFORE this turn
-        flights:     flights,
-        origin_city: originCity,
-        dest_name:   destName,
+      const res = await fetch(`${API_BASE}/chat`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message:     text,
+          history:     history,          // send history BEFORE this turn
+          flights:     flights,
+          origin_city: originCity,
+          dest_name:   destName,
+        }),
       });
-      setHistory([...newHistory, { role: 'model', text: res.data.reply }]);
+      const data = await res.json();
+      setHistory([...newHistory, { role: 'model', text: data.reply }]);
     } catch {
       setHistory([...newHistory, {
         role: 'model',
@@ -157,7 +163,7 @@ const FlightChatbot = ({ flights = [], originCity = "", destName = "", isSearchi
         <>
           {/* Messages area */}
           <div style={{
-            height: '300px', overflowY: 'auto', overflowX: 'hidden',
+            height: '280px', overflowY: 'auto', overflowX: 'hidden',
             padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px',
           }}>
 
